@@ -1,17 +1,18 @@
-K9_CONFIG = {}
+Config = {}
 
---LEFT ALT
-K9_CONFIG.Key = 19
---K9 SPAWN/DESPAWN LOCATION
-K9_CONFIG.Location = {x = 457.15, y = -1007.79, z = 28.31}
--- PREVENT K9 FROM SPAWNING BY GAME ENGINE.
-K9_CONFIG.Prevent = true
---K9 MODEL
-K9_CONFIG.Model = 'a_c_shepherd'
+Config.DogModelProps = { 
+	[1] = { -- Number of dogs can be infinite
+		["Header"] = "Police K9", -- Menu Header
+		["Text"] = "Police Issued K9 Unit Dog",
+		["Dog"] = "a_c_shepherd", -- Dog stats
+		["Colour"] = 3, -- Normally 1-3 -- Dog stats
+		["Vest"] = 3 -- Dog stats
+	},
+}
 
-K9_CONFIG.OpenDoorsOnSearch = true
+Config.Autorhized = {["police"] = 4, ["parkranger"] = 2, ["bcso"] = 4} -- This is setup as [JOB] = [GRADE]
 
-K9_CONFIG.Items = {
+Config.K9Search = {
 	"joint",
 	"cokebaggy",
 	"crack_baggy",

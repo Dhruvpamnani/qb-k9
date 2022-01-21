@@ -1,12 +1,13 @@
 fx_version 'cerulean'
 game 'gta5'
 
-description 'K-9 Script for QB'
+description 'K-9 Script for QB original author hashx_k9 edited by FjamZoo#0001'
 version '1.0.0'
 
 shared_script {
+	'@qb-core/shared/locale.lua',
+	'locales/en.lua',
 	'config.lua',
-	'@qb-core/import.lua'
 }
 
 client_scripts {
@@ -16,13 +17,3 @@ client_scripts {
 server_script {
 	'server/server.lua'
 }
-
-ui_page 'html/menu.html'
-
-files {
-	"html/menu.html",
-	"html/style.css",
-	"html/script.js",
-	"html/*.png"
-}
-dependency 'qb-core'

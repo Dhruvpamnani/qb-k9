@@ -1,35 +1,11 @@
+local QBCore = exports['qb-core']:GetCoreObject()
+---- ** Locales ** ----
+local activate_k9 = false
+local k9_name = Lang:t("info.k9_name")
+local k9_id = false
+local searching = false
+local following = true
 
---       GLOBALS      --
-local DEBUG = false
--- DO NOT TOUCH THESE --
---BLOCKERS
-local ACTIVATE_K9 = false
-local DISTANCE_CD = 0
-local ACTION_CD = 0
-local CLEANUP_CD = 0
-local NOTIFY_CD = 0
-local MENU_CD = 0
-local IN_MENU = false
-
--- VISUAL OPTIONS
-local K9_NAME = "Zero"
-local K9_COLOR = 0
-local K9_VEST = 0
--- FUNCTIONAL GLOBALS
-local K9_ID = false
-local K9_IN_VEHICLE = false
-local SEARCHING = false
-local PLAYING_ANIMATION = false
-local DRUGS_FOUND = false
-local FOLLOWING = true
--- ^ DO NOT TOUCH THESE ^ --
-
-
---[[
-
-ANIMATION SET
-
-]]--
 local sit = {
     dict = "creatures@rottweiler@amb@world_dog_sitting@idle_a",
     anim = "idle_b"
@@ -43,429 +19,115 @@ local searchhit = {
     anim = "indicate_high"
 }
 
---[[
 
-ON PLAYER SELECTED ACTIVE K9 BASED ON RANK
+---- ** Functions ** ----
+---- ** Sit and Lay animations ** ----
+local function PlayAnimation(dict, anim)
+  RequestAnimDict(dict)
+  while not HasAnimDictLoaded(dict) do
+      Wait(0)
+  end
+  local DOG = NetworkGetEntityFromNetworkId(k9_id)
+  following = false
+  TaskPlayAnim(DOG, dict, anim, 8.0, -8.0, -1, 2, 0.0, 0, 0, 0)
+end
 
-]]--
-RegisterNetEvent('QBCore:Client:OnPlayerLoaded')
-AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
-    local PLAYER_JOB = QBCore.Functions.GetPlayerData().job
-
-    if DEBUG then print('PLAYER JOB DATA NAME: ' .. PLAYER_JOB.name .. 'GRADE: ' .. PLAYER_JOB.grade.level) end
-
-    if (PLAYER_JOB ~= nil) and PLAYER_JOB.name == "police" and PLAYER_JOB.grade.level >= 2 then
-      EnableK9()
-    end
-
-end)
-
-RegisterNetEvent('QBCore:Client:OnJobUpdate')
-AddEventHandler('QBCore:Client:OnJobUpdate', function(JOB_DATA)
-
-  local PLAYER_JOB = JOB_DATA
-
-  if DEBUG then print('PLAYER JOB DATA NAME: ' .. PLAYER_JOB.name .. 'GRADE: ' .. PLAYER_JOB.grade.level) end
-
-  if PLAYER_JOB ~= nil and PLAYER_JOB.name == "police" and PLAYER_JOB.grade.level >= 2 then
-    EnableK9()
+local function K9AttackorFollow(target)
+  local DOG = NetworkGetEntityFromNetworkId(k9_id)
+  if target then
+    SetCanAttackFriendly(DOG, true, true);
+    TaskPutPedDirectlyIntoMelee(DOG, target, 0.0, -1.0, 0.0, false);
+    following = false
+    QBCore.Functions.Notify(k9_name.." is attacking!", "error", 2000)
   else
-    ACTIVATE_K9 = false
-  end
-end)
-
-RegisterNetEvent("QBCore:Client:OnPlayerUnload")
-AddEventHandler("QBCore:Client:OnPlayerUnload", function()
-    --DEACTIVE K9
-    DespawnK9()
-end)
-
---[[
-
-MAIN THREAD
-DISTANCE CHECK
-KEY PRESSES
-CLEAN UP CHECKS
-
-]]--
-
-
-function EnableK9()
-    --SET RELATION GROUP TO PREVENT DOG ATTACKS ON YOURSELF
-    SetPedRelationshipGroupHash(PlayerPedId(), GetHashKey("PLAYER_POLICE"))
-    -- SET TRUE
-    ACTIVATE_K9 = true
-    --SET RESOURCE NAME
-    SendNUIMessage({
-        type = "RESOURCE_NAME",
-        name = GetCurrentResourceName()
-    })
-    -- WE DO NOT WANT TO RUN THIS LOOP IF A PLAYER CHANGES OR LOSES ACCESS.
-    while ACTIVATE_K9 do
-        Citizen.Wait(5)
-
-        -- SEND K9 AFTER TARGET ONLY IF K9 EXISTS
-        if K9_ID and IsControlJustPressed(1, K9_CONFIG.Key) and IsPlayerFreeAiming(PlayerId()) and IsDurationComplete(ACTION_CD, 1000) then
-
-            local bool, target = GetEntityPlayerIsFreeAimingAt(PlayerId())
-            if bool then
-                if IsEntityAPed(target) then
-                    FOLLOWING = false
-                    ACTION_CD = GetGameTimer()
-                    local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-
-                    if IsEntityAttached(DOG) then
-                      K9ToggleVehicle(target)
-                    else 
-                      K9AttackorFollow(target)
-                    end
-
-                end
-            end
-
-        end
-
-        -- START LOOP TO CHECK IF WE SHOULD OPEN THE MENU ONLY IF K9 EXISTS
-        if K9_ID and IsControlJustPressed(1, K9_CONFIG.Key) and not IsPlayerFreeAiming(PlayerId()) then
-           CheckForMenu()
-        end
-
-        -- FORCE K9 TO FOLOW
-        if K9_ID and IsControlJustReleased(1, K9_CONFIG.Key) and not IsPlayerFreeAiming(PlayerId()) and IsDurationComplete(ACTION_CD, 1000)  then
-
-            if not FOLLOWING then
-              K9AttackorFollow(false)
-              FOLLOWING = true
-           end
-
-        end
-
-        -- TRIGGER THE DISTANCE CHECK FOR THE K9 SPAWNER/DESPAWNER. IT IS TRIGGERED EVERY 5 SECONDS.
-        if IsDurationComplete(DISTANCE_CD, 5000) then
-          CheckK9Distance()
-        end
-
-        -- TRIGGER THE DEATH CHECK EVERY 15 SECONDS AND OTHER CONDITIONS.
-        if IsDurationComplete(CLEANUP_CD, 15000) then
-          CheckK9Conditions()
-        end
-
-    end
-
-end
-
---[[ SIMPLE LOOP AND TIME CHECK A DURATION TO OPEN THE MENU WHILE HOLDING THE K9 KEY ]]--
-function CheckForMenu()
-  MENU_CD = GetGameTimer()
-  while IsControlPressed(0, K9_CONFIG.Key) do
-    Citizen.Wait(0)
-
-    if IsDurationComplete(MENU_CD, 1500) then
-      ACTION_CD = GetGameTimer() + 99 * 1000000
-      OpenMenu("OPEN_K9_MENU")
-      break
-    end
-
+    TaskFollowToOffsetOfEntity(DOG, PlayerPedId(), 0.5, -1.0, 0.0, 5.0, -1, 1.0, true);
+    following = true
+    QBCore.Functions.Notify(k9_name.." is following.", "primary", 2000)
   end
 end
 
---[[ CHECK DISTANCE AND IF WITHIN RANGE DRAW MARKER AND MENU FOR K9 SPAWNER DESPAWNER ]]--
-function CheckK9Distance()
-  DISTANCE_CD = GetGameTimer()
-
-  local PLAYER = PlayerPedId()
-  local PLAYER_COORDS = GetEntityCoords(PLAYER)
-  local DISTANCE = #(PLAYER_COORDS - vector3(K9_CONFIG.Location.x, K9_CONFIG.Location.y, K9_CONFIG.Location.z))
-
-  if DISTANCE <= 3 and not IN_MENU then
-
-    while true do
-
-      Citizen.Wait(0)
-
-      if IsDurationComplete(MENU_CD, 1000) then
-        PLAYER_COORDS = GetEntityCoords(PLAYER)
-        DISTANCE = #(PLAYER_COORDS - vector3(K9_CONFIG.Location.x, K9_CONFIG.Location.y, K9_CONFIG.Location.z))
-        if DISTANCE > 4 then
-          break
-        end
-        MENU_CD = GetGameTimer()
+-- Spawns and Deletes K9
+local function DespawnK9()
+  if k9_id then
+      local DOG = NetworkGetEntityFromNetworkId(k9_id)
+      if DoesEntityExist(DOG) then
+        DeleteEntity(DOG)
       end
-
-      if IsDurationComplete(NOTIFY_CD, 10000) then
-        NOTIFY_CD = GetGameTimer()
-        QBCore.Functions.Notify("PRESS (F) TO ACCESS KENNEL", "primary", 4000)
-      end
-
-      DrawMarker(31, K9_CONFIG.Location.x, K9_CONFIG.Location.y, K9_CONFIG.Location.z, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0, 205, 255, 255, false, true, 2, false, false, false, false)
-
-      if IsControlJustPressed(0, 23) then
-        IN_MENU = true
-        OpenMenu("OPEN_K9_SPAWNER_DESPAWNER")
-
-        break
-
-      end
-
-    end
-
   end
-
+  following = true
+  k9_id = false
+  searching = false
 end
 
---[[ SIMPLE CHECK THAT WILL REMOVE THE K9)]]--
-function CheckK9Conditions()
-  CLEANUP_CD = GetGameTimer()
-  
-  if K9_ID then
-    
-
-    local DOG = NetworkGetEntityFromNetworkId(K9_ID)
+local function CheckK9Conditions()  
+  if k9_id then
+    local DOG = NetworkGetEntityFromNetworkId(k9_id)
     local DOG_COORDS = GetEntityCoords(DOG)
     local PLAYER_COORDS = GetEntityCoords(PlayerPedId())
     local DISTANCE = #(DOG_COORDS - PLAYER_COORDS)
-    
     if DISTANCE > 100 and not IsPedInAnyVehicle(DOG, false) then
       K9AttackorFollow(false)
     end
-
-
     if IsEntityDead(DOG) or IsEntityDead(PlayerPedId()) then
       DespawnK9()
     end
-
   end
 end
 
--- OPEN MENU --
-function OpenMenu(menu)
-    SetNuiFocus(true, true)
-    SendNUIMessage({
-        type = menu
-    })
-
-end
-
-
-
---[[ NUI Callbacks ]]--
-local switch = {                                          -- break statement
-  ["K9_SPAWN"] = function ()
-    SpawnK9()
-  end,
-  ["K9_DESPAWN"] = function () DespawnK9() end,
-
-  ["K9_SAVE"] = function () SaveK9() end,
-
-  ["K9_SIT"] = function () PlayAnimation(sit.dict, sit.anim) FOLLOWING = false end,
-  ["K9_LAYDOWN"] = function () PlayAnimation(laydown.dict, laydown.anim) FOLLOWING = false end,
-  ["K9_VEHICLE_TOGGLE"] = function () K9ToggleVehicle(false) end,
-
-  ["K9_SEARCH_PERSON"] = function () K9SearchPerson() end,
-  ["K9_SEARCH_VEHICLE"] = function () K9SearchVehicle() end,
-  ["K9_SEARCH_AREA"] = function () K9SearchArea() end
-}
-
-RegisterNUICallback("CLOSE_MENU", function(data)
-    IN_MENU = false
-    ACTION_CD = GetGameTimer()
-    SetNuiFocus(false, false)
-end)
-
-RegisterNUICallback("MENU_SELECT", function(data)
-    if data.value then
-      ACTION_CD = GetGameTimer()
-      switch[data.value]()
+local function EnableK9(bool)
+  SetPedRelationshipGroupHash(PlayerPedId(), GetHashKey("PLAYER_POLICE"))
+  if bool then
+    activate_k9 = true
+    while activate_k9 do
+        Wait(15000)
+        CheckK9Conditions()
     end
-end)
-
-RegisterNUICallback("MENU_UPDATE", function(data)
-
-    UpdateK9Appearance(data.id, data.type)
-end)
-
-RegisterNUICallback("MENU_INPUT", function(data)
-
-    K9_NAME = data.value
-end)
-
-
-
-
-
---Spawn K9
-function SpawnK9()
-  if K9_ID then
-    DespawnK9()
   end
-  TriggerServerEvent("K9:SERVER:SPAWN_K9")
-end
--- Spawns and Deletes K9
-function DespawnK9()
-
-
-    if K9_ID then
-            local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-            if DoesEntityExist(DOG) then
-              DeleteEntity(DOG)
-            end
-    end
-    DISTANCE_CD = 0
-    ACTION_CD = 0
-    MENU_CD = 0
-    FOLLOWING = true
-
-    K9_ID = false
-    K9_IN_VEHICLE = false
-    SEARCHING = false
-    PLAYING_ANIMATION = false
-    DRUGS_FOUND = false
 end
 
-local cam = 0
---- SPAWN EVENT
-RegisterNetEvent('K9:CLIENT:SPAWN_K9')
-AddEventHandler('K9:CLIENT:SPAWN_K9', function()
-  local DOGHASH = GetHashKey(K9_CONFIG.Model)
-  RequestModel(DOGHASH);
-  while not HasModelLoaded(DOGHASH) do
-    Citizen.Wait(1)
-    RequestModel(DOGHASH);
-  end
 
-  local DOG = CreatePed(28, GetHashKey(K9_CONFIG.Model), K9_CONFIG.Location.x, K9_CONFIG.Location.y, K9_CONFIG.Location.z, 90, true, true)
-  --SET NET ID FOR DOG
-  K9_ID = NetworkGetNetworkIdFromEntity(DOG)
-  --REQEUST CONTROL
-  RequestNetworkControl()
-  --GET ENTITY
-  local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-  --set K9 Properties
-  SetPedComponentVariation(DOG, 0, 0, K9_COLOR, 0)
-  SetPedComponentVariation(DOG, K9_VEST, 0, 1, 0)
-  SetBlockingOfNonTemporaryEvents(DOG, true)
-  SetPedFleeAttributes(DOG, 0, false)
-  SetPedRelationshipGroupHash(DOG, GetHashKey("PLAYER_POLICE"))
-  SetPedArmour(DOG, 25)
-  SetEntityHeading(DOG, 90)
-  -- CREATE CAMERA
-  -- Camera
-  local coords = GetOffsetFromEntityInWorldCoords(DOG, 2.0, 0, -1.0)
-  RenderScriptCams(false, false, 0, 1, 0)
-  DestroyCam(cam, false)
-  if(not DoesCamExist(cam)) then
-      cam = CreateCam('DEFAULT_SCRIPTED_CAMERA', true)
-      SetCamActive(cam, true)
-      RenderScriptCams(true, false, 0, true, true)
-      SetCamCoord(cam, coords.x, coords.y, coords.z + 0.5)
-      SetCamRot(cam, 0.0, 0.0, GetEntityHeading(DOG) + 90)
-  end
-  --OPEN NUI
-  IN_MENU = true
-  SetNuiFocus(true, true)
-  SendNUIMessage({
-      type = 'OPEN_K9_OPTIONS',
-      k9_name = K9_NAME,
-      vest = K9_VEST,
-      color = K9_COLOR
-  })
-end)
-
---Set BLIP and Destroy Camera
-function SaveK9()
-  IN_MENU = false
-  local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-  local BLIP = AddBlipForEntity(DOG)
-  SetBlipAsFriendly(BLIP, true)
-  SetBlipSprite(BLIP, 442)
-  BeginTextCommandSetBlipName("STRING")
-  AddTextComponentString(K9_NAME)
-  EndTextCommandSetBlipName(BLIP)
-  RenderScriptCams(false, false, 0, 1, 0)
-  DestroyCam(cam, false)
-  K9AttackorFollow(false)
-end
---Update K9 Appearance
-function UpdateK9Appearance(id, type)
-  -- id = K9_VEST or K9_COLOR | type = "+" or "-"
-  -- COLOR 0 - 3
-  -- VEST 1 - 8
-  if id == 'K9_VEST' then
-    if type == '+' then
-        K9_VEST = K9_VEST + 1
-    else
-        K9_VEST = K9_VEST - 1
-    end
-
-    if K9_VEST < 1 then K9_VEST = 0 end
-    if K9_VEST > 8 then K9_VEST = 8 end
-  end
-
-  if id == 'K9_COLOR' then
-    if type == '+' then
-        K9_COLOR = K9_COLOR + 1
-    else
-        K9_COLOR = K9_COLOR - 1
-    end
-
-    if K9_COLOR < 1 then K9_COLOR = 0 end
-    if K9_COLOR > 3 then K9_COLOR = 3 end
-  end
-
-  --GET ENTITY
-  local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-  --set K9 Properties
-  SetPedComponentVariation(DOG, 0, 0, K9_COLOR, 0)
-  SetPedComponentVariation(DOG, 8, 0, K9_VEST, 0)
-
-  SendNUIMessage({
-      type = 'OPEN_K9_OPTIONS',
-      k9_name = K9_NAME,
-      vest = K9_VEST,
-      color = K9_COLOR
-  })
-end
 --Animation set if we found something.
-function K9Found(type)
-  local time = math.random(1000,2000)
+local function K9Found(status, type)
+  local time = math.random(500,1500)
   if(type == 'vehicle') then
-    time = math.random(10000,20000)
+    time = math.random(1500,3500)
   end
-  Citizen.Wait(time)
-  QBCore.Functions.Notify("Drugs found!", "error", 4000)
-  SEARCHING = false
-  PlayAnimation(searchhit.dict, searchhit.anim)
-  Citizen.Wait(3000)
-  PlayAnimation(sit.dict, sit.anim)
-  FOLLOWING = false
-end
---[[
-  ATTACK OR FOLLOW
-  TOGGLE VEHICLE
-  SEARCH PLAYER
-  SEARCH VEHICLE
-  SEARCH AREA
-
-]]--
-function K9AttackorFollow(target)
-  ACTION_CD = GetGameTimer()
-  local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-  if target then
-    --Attack
-    SetCanAttackFriendly(DOG, true, true);
-    TaskPutPedDirectlyIntoMelee(DOG, target, 0.0, -1.0, 0.0, false);
-    FOLLOWING = false
-    QBCore.Functions.Notify(K9_NAME.." is attacking!", "error", 2000)
+  Wait(time)
+  if status then
+    QBCore.Functions.Notify(Lang:t("success.k9_alert"), "success", 4000)
+    searching = false
+    PlayAnimation(searchhit.dict, searchhit.anim)
+    Wait(2500)
+    PlayAnimation(sit.dict, sit.anim)
+    following = false
   else
-    TaskFollowToOffsetOfEntity(DOG, PlayerPedId(), 0.5, -1.0, 0.0, 5.0, -1, 1.0, true);
-    FOLLOWING = true
-    QBCore.Functions.Notify(K9_NAME.." is following.", "primary", 2000)
+    QBCore.Functions.Notify(Lang:t("error.k9_alert"), "error", 4000)
+    following = true
   end
 end
 
-function K9ToggleVehicle(target)
-  SEARCHING = false
-  local DOG = NetworkGetEntityFromNetworkId(K9_ID)
+-- Gets Closest Door To Player
+local function GetClosestVehicleDoor(vehicle)
+  local PLAYER = GetEntityCoords(PlayerPedId(), false)
+  local BACKLEFT = GetWorldPositionOfEntityBone(vehicle, GetEntityBoneIndexByName(vehicle, "door_dside_r"))
+  local BACKRIGHT = GetWorldPositionOfEntityBone(vehicle, GetEntityBoneIndexByName(vehicle, "door_pside_r"))
+  local BLDISTANCE = #(PLAYER - BACKLEFT)
+  local BRDISTANCE = #(PLAYER - BACKRIGHT)
+
+  local FOUND_DOOR = false
+
+  if BLDISTANCE < BRDISTANCE then
+      FOUND_DOOR = 2
+  else
+      FOUND_DOOR = 3
+  end
+
+  return FOUND_DOOR
+end
+
+local function K9ToggleVehicle(target)
+  searching = false
+  local DOG = NetworkGetEntityFromNetworkId(k9_id)
   local VEHICLE = QBCore.Functions.GetClosestVehicle()
   local DOOR = GetClosestVehicleDoor(VEHICLE)
   local PLAYER_COORDS = GetEntityCoords(PlayerPedId())
@@ -479,61 +141,86 @@ function K9ToggleVehicle(target)
     else
       SEAT = "seat_dside_r"
     end
-      if IsEntityAttached(DOG) then
-          FOLLOWING = false
-          SetEntityInvincible(DOG, true)
-          SetPedCanRagdoll(DOG, false)
-          --Get Vehicle Coords, Open Rear Passenger Door, Spawn Dog
-          local DOOR_COORDS = GetEntryPositionOfDoor(VEHICLE, DOOR);
-          local  bool, gZero = GetGroundZFor_3dCoord(DOOR_COORDS.x, DOOR_COORDS.y, PLAYER_COORDS.z+5, false);
+    if IsEntityAttached(DOG) then
+        following = false
+        SetEntityInvincible(DOG, true)
+        SetPedCanRagdoll(DOG, false)
+        --Get Vehicle Coords, Open Rear Passenger Door, Spawn Dog
+        local DOOR_COORDS = GetEntryPositionOfDoor(VEHICLE, DOOR);
+        local  bool, gZero = GetGroundZFor_3dCoord(DOOR_COORDS.x, DOOR_COORDS.y, PLAYER_COORDS.z+5, false);
 
-          SetVehicleDoorOpen(VEHICLE, DOOR, false, false);
-          Citizen.Wait(500)
-          AttachEntityToEntity(DOG, VEHICLE, GetEntityBoneIndexByName(VEHICLE, SEAT), 0.0, -0.25, 0.40, 0.0, 0.0, 0, false, false, false, true, 20, true)
-          Citizen.Wait(500)
-          DetachEntity(DOG, false, false)  
-          SetEntityCoords(DOG, DOOR_COORDS.x, DOOR_COORDS.y, gZero, false, false, false, false)
-          ClearPedTasks(DOG)
-          Citizen.Wait(1500)
-          K9AttackorFollow(target)
-          SetPedCanRagdoll(DOG, true)
-          SetEntityInvincible(DOG, false)
-          SetVehicleDoorShut(VEHICLE, DOOR, false)
-
-      else
-        FOLLOWING = true
-        SetVehicleDoorOpen(VEHICLE, DOOR, false, false)
-        Citizen.Wait(1500)
+        SetVehicleDoorOpen(VEHICLE, DOOR, false, false);
+        Wait(500)
         AttachEntityToEntity(DOG, VEHICLE, GetEntityBoneIndexByName(VEHICLE, SEAT), 0.0, -0.25, 0.40, 0.0, 0.0, 0, false, false, false, true, 20, true)
-        PlayAnimation(sit.dict, sit.anim)
+        Wait(500)
+        DetachEntity(DOG, false, false)  
+        SetEntityCoords(DOG, DOOR_COORDS.x, DOOR_COORDS.y, gZero, false, false, false, false)
+        ClearPedTasks(DOG)
+        Wait(1500)
+        K9AttackorFollow(target)
+        SetPedCanRagdoll(DOG, true)
+        SetEntityInvincible(DOG, false)
         SetVehicleDoorShut(VEHICLE, DOOR, false)
 
-      end
+    else
+      following = true
+      SetVehicleDoorOpen(VEHICLE, DOOR, false, false)
+      Wait(1500)
+      AttachEntityToEntity(DOG, VEHICLE, GetEntityBoneIndexByName(VEHICLE, SEAT), 0.0, -0.25, 0.40, 0.0, 0.0, 0, false, false, false, true, 20, true)
+      PlayAnimation(sit.dict, sit.anim)
+      SetVehicleDoorShut(VEHICLE, DOOR, false)
+
+    end
   else
-    QBCore.Functions.Notify(K9_NAME.." is not close enough.", "error", 4000)
+    QBCore.Functions.Notify(k9_name..Lang:t("error.k9_toofar"), "error", 4000)
   end
 end
 
-function K9SearchPerson()
-    FOLLOWING = false
+-- Gets Players
+local function GetPlayers()
+  local players = {}
+  for i = 0, 256 do
+      if NetworkIsPlayerActive(i) then
+          table.insert(players, i)
+      end
+  end
+  return players
+end
+
+local function K9SearchPerson()
+    following = false
     local TARGET = GetPlayerSourceAheadOfPlayer()
 
     if TARGET > 0 then
       TriggerServerEvent("K9:SERVER:SEARCH_PERSON", TARGET)
     else
-      QBCore.Functions.Notify(K9_NAME.." unable to locate person.", "error", 4000)
+      QBCore.Functions.Notify(k9_name..Lang:t("error.k9_locaterror"), "error", 4500)
     end
     
 end
 
-function K9SearchVehicle()
-  FOLLOWING = false
+-- Gets Player ID
+function GetPlayerId(target_ped)
+  local players = GetPlayers()
+  for a = 1, #players do
+
+      local ped = GetPlayerPed(players[a])
+      local server_id = GetPlayerServerId(players[a])
+      if target_ped == ped then
+          return server_id
+      end
+  end
+  return 0
+end
+
+local function K9SearchVehicle()
+  following = false
   local VEHICLE = QBCore.Functions.GetClosestVehicle()
   local PLATE = GetVehicleNumberPlateText(VEHICLE)
-  local DOG = NetworkGetEntityFromNetworkId(K9_ID)
+  local DOG = NetworkGetEntityFromNetworkId(k9_id)
 
   if VEHICLE then
-    QBCore.Functions.Notify(K9_NAME.." is searching.", "primary", 4000)
+    QBCore.Functions.Notify(k9_name..Lang:t("info.k9_searching"), "success", 4500)
 
     local PLAYERS = {}
     local MAX_SEATS = GetVehicleMaxNumberOfPassengers(VEHICLE) -2
@@ -554,154 +241,94 @@ function K9SearchVehicle()
     
     TriggerServerEvent("K9:SERVER:SEARCH_VEHICLE", PLATE, PLAYERS)
     
-    SEARCHING = true
+    searching = true
 
-      if SEARCHING then
-      local OFFSET_1 = GetOffsetFromEntityInWorldCoords(VEHICLE, 2.0, -2.0, 0.0)
-      TaskGoToCoordAnyMeans(DOG, OFFSET_1.x, OFFSET_1.y, OFFSET_1.z, 5.0, 0, false, 1, 10.0)
-      Citizen.Wait(5000)
-      end
+    if searching then
+    local offset_1 = GetOffsetFromEntityInWorldCoords(VEHICLE, 2.0, -2.0, 0.0)
+    TaskGoToCoordAnyMeans(DOG, offset_1.x, offset_1.y, offset_1.z, 5.0, 0, false, 1, 10.0)
+    Wait(2500)
+    end
 
-      if SEARCHING then
-      local OFFSET_2 = GetOffsetFromEntityInWorldCoords(VEHICLE, 2.0, 2.0, 0.0)
-      TaskGoToCoordAnyMeans(DOG, OFFSET_2.x, OFFSET_2.y, OFFSET_2.z, 5.0, 0, false, 1, 10.0)
-      Citizen.Wait(5000)
-      end
+    if searching then
+    local offset_2 = GetOffsetFromEntityInWorldCoords(VEHICLE, 2.0, 2.0, 0.0)
+    TaskGoToCoordAnyMeans(DOG, offset_2.x, offset_2.y, offset_2.z, 5.0, 0, false, 1, 10.0)
+    Wait(2500)
+    end
 
-      if SEARCHING then
-      local OFFSET_3 = GetOffsetFromEntityInWorldCoords(VEHICLE, -2.0, 2.0, 0.0)
-      TaskGoToCoordAnyMeans(DOG, OFFSET_3.x, OFFSET_3.y, OFFSET_3.z, 5.0, 0, false, 1, 10.0)
-      Citizen.Wait(5000)
-      end
+    if searching then
+    local offset_3 = GetOffsetFromEntityInWorldCoords(VEHICLE, -2.0, 2.0, 0.0)
+    TaskGoToCoordAnyMeans(DOG, offset_3.x, offset_3.y, offset_3.z, 5.0, 0, false, 1, 10.0)
+    Wait(2500)
+    end
 
-      if SEARCHING then
-      local OFFSET_4 = GetOffsetFromEntityInWorldCoords(VEHICLE, -2.0, -2.0, 0.0)
-      TaskGoToCoordAnyMeans(DOG, OFFSET_4.x, OFFSET_4.y, OFFSET_4.z, 5.0, 0, false, 1, 10.0)
-      Citizen.Wait(5000)
-      end
+    if searching then
+    local offset_4 = GetOffsetFromEntityInWorldCoords(VEHICLE, -2.0, -2.0, 0.0)
+    TaskGoToCoordAnyMeans(DOG, offset_4.x, offset_4.y, offset_4.z, 5.0, 0, false, 1, 10.0)
+    Wait(2500)
+    end
 
-      SEARCHING = false
+    searching = false
   else
-      QBCore.Functions.Notify("No vehicle, try again.", "error", 4000)
+      QBCore.Functions.Notify(Lang:t("error.k9_vehlocate"), "error", 4000)
   end
 end
 
-function K9SearchArea()
+-- Gets Player ID
+local function GetPlayersInRadius(min, max)
+  local players = GetPlayers()
+  local IN_RANGE = {}
+  for a = 1, #players do
+      
+    local PED = GetPlayerPed(players[a])
+    local PED_COORDS = GetEntityCoords(PED)
+    local PLAYER_COORDS = GetEntityCoords(PlayerPedId())
+    local DISTANCE = #(PED_COORDS - PLAYER_COORDS)
 
+    if DISTANCE <= max and DISTANCE >= min then
+      table.insert(IN_RANGE, PED)
+    end  
+
+  end
+  return IN_RANGE
+end
+
+local function K9SearchArea()
   local PLAYERS = GetPlayersInRadius(20,75)
 
   for i = 1, #PLAYERS do
-      FOLLOWING = false
-      QBCore.Functions.Notify(K9_NAME.." found a scent.", "primary", 4000)
-      local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-      local DOG_COORDS = GetEntityCoords(DOG)
-      local COORDS = GetEntityCoords(PLAYERS[i])
-      TaskGoToCoordAnyMeans(DOG, COORDS.x, COORDS.y, COORDS.z, 5.0, 0, false, 1, 10.0)
+    following = false
+    QBCore.Functions.Notify(k9_name..Lang:t("info.k9_scent"), "primary", 4000)
+    local DOG = NetworkGetEntityFromNetworkId(k9_id)
+    local DOG_COORDS = GetEntityCoords(DOG)
+    local COORDS = GetEntityCoords(PLAYERS[i])
+    TaskGoToCoordAnyMeans(DOG, COORDS.x, COORDS.y, COORDS.z, 5.0, 0, false, 1, 10.0)
 
-      while #(DOG_COORDS - COORDS) > 2 do
-        Citizen.Wait(1000)
-        DOG_COORDS = GetEntityCoords(DOG)
-        if FOLLOWING then
-          break
-        end
-      end
-
-      if FOLLOWING then
-        QBCore.Functions.Notify(K9_NAME.." is no longer tracking.", "primary", 4000)
+    while #(DOG_COORDS - COORDS) > 2 do
+      Wait(1000)
+      DOG_COORDS = GetEntityCoords(DOG)
+      if following then
         break
       end
-      QBCore.Functions.Notify(K9_NAME.." lost the scent.", "primary", 4000)
-      K9AttackorFollow(false)
-      Citizen.Wait(2000)
-  end
+    end
 
-end
-
-RegisterNetEvent('K9:CLIENT:SEARCH_RESULTS')
-AddEventHandler('K9:CLIENT:SEARCH_RESULTS', function(status, type)
-  if status then
-
-    K9Found(type)
-  end
-end)
-
---[[
-
-    TOOLING
-
-]]--
-function IsDurationComplete(time, duration)
-
-  local difference = GetGameTimer() - time
-  if difference >= duration then
-    return true
-  else
-    return false
+    if following then
+      QBCore.Functions.Notify(k9_name..Lang:t("info.k9_nofollow"), "primary", 4000)
+      break
+    end
+    QBCore.Functions.Notify(k9_name..Lang:t("info.k9_lostscent"), "primary", 4000)
+    K9AttackorFollow(false)
+    Wait(2000)
   end
 
 end
 
 -- Gets Control Of Ped
-function RequestNetworkControl()
-    NetworkRequestControlOfNetworkId(K9_ID)
-    while not NetworkHasControlOfNetworkId(K9_ID) do
-        Citizen.Wait(500)
-        NetworkRequestControlOfNetworkId(K9_ID)
+local function RequestNetworkControl()
+    NetworkRequestControlOfNetworkId(k9_id)
+    while not NetworkHasControlOfNetworkId(k9_id) do
+        Wait(500)
+        NetworkRequestControlOfNetworkId(k9_id)
     end
-end
-
--- Gets Players
-function GetPlayers()
-    local players = {}
-    for i = 0, 256 do
-        if NetworkIsPlayerActive(i) then
-            table.insert(players, i)
-        end
-    end
-    return players
-end
-
--- Set K9 Animation (Sit / Laydown)
-function PlayAnimation(dict, anim)
-  RequestAnimDict(dict)
-  while not HasAnimDictLoaded(dict) do
-      Citizen.Wait(0)
-  end
-  local DOG = NetworkGetEntityFromNetworkId(K9_ID)
-  TaskPlayAnim(DOG, dict, anim, 8.0, -8.0, -1, 2, 0.0, 0, 0, 0)
-end
-
--- Gets Player ID
-function GetPlayerId(target_ped)
-    local players = GetPlayers()
-    for a = 1, #players do
-
-        local ped = GetPlayerPed(players[a])
-        local server_id = GetPlayerServerId(players[a])
-        if target_ped == ped then
-            return server_id
-        end
-    end
-    return 0
-end
-
--- Gets Player ID
-function GetPlayersInRadius(min, max)
-    local PLAYERS = GetPlayers()
-    local IN_RANGE = {}
-    for a = 1, #PLAYERS do
-        
-        local PED = GetPlayerPed(PLAYERS[a])
-        local PED_COORDS = GetEntityCoords(PED)
-        local PLAYER_COORDS = GetEntityCoords(PlayerPedId())
-        local DISTANCE = #(PED_COORDS - PLAYER_COORDS)
-
-        if DISTANCE <= max and DISTANCE >= min then
-          table.insert(IN_RANGE, PED)
-        end  
-
-    end
-    return IN_RANGE
 end
 
 function GetPlayerSourceAheadOfPlayer()
@@ -719,28 +346,268 @@ function GetPlayerSourceAheadOfPlayer()
 
 end
 
--- Gets Closest Door To Player
-function GetClosestVehicleDoor(vehicle)
-  local PLAYER = GetEntityCoords(PlayerPedId(), false)
-  local BACKLEFT = GetWorldPositionOfEntityBone(vehicle, GetEntityBoneIndexByName(vehicle, "door_dside_r"))
-  local BACKRIGHT = GetWorldPositionOfEntityBone(vehicle, GetEntityBoneIndexByName(vehicle, "door_pside_r"))
-  local BLDISTANCE = #(PLAYER - BACKLEFT)
-  local BRDISTANCE = #(PLAYER - BACKRIGHT)
 
-    local FOUND_DOOR = false
+---- ** Job Handlers ** ----
 
-    if BLDISTANCE < BRDISTANCE then
-        FOUND_DOOR = 2
-    else
-        FOUND_DOOR = 3
-    end
+AddEventHandler('QBCore:Client:OnPlayerLoaded', function()
+  local player = QBCore.Functions.GetPlayerData()
+  PlayerJob = player.job
 
-    return FOUND_DOOR
+  if PlayerJob or PlayerJob.name == "police" then
+    EnableK9()
+  end
+end)
+
+RegisterNetEvent('QBCore:Client:OnPlayerUnload', function()
+  DespawnK9()
+end)
+
+RegisterNetEvent('QBCore:Client:OnJobUpdate', function(JobInfo)
+  PlayerJob = JobInfo
+  if JobInfo.name == "police" then
+    EnableK9()
+  end
+end)
+
+---- ** Create Threads ** ----
+CreateThread(function()
+  exports['qb-target']:AddBoxZone("1234", vector3(458.95, -1016.99, 28.17), 1.5, 1.6, {
+    name = "1234", 
+    heading = 102.0, 
+    debugPoly = false, 
+    minZ = 25.7, 
+    maxZ = 30.9, 
+  }, {
+    options = { 
+      {
+        type = "client",
+        event = "qb-k9:client:menu", 
+        icon = 'fa-solid fa-dog', 
+        label = Lang:t("info.k9_lostscent"), 
+        job = Config.Autorhized, 
+      }
+    },
+    distance = 2.5,
+  })
+end)
+
+---- ** Register NetEvents ** ----
+
+RegisterNetEvent('qb-k9:client:menu', function()
+  local K9Purchase = {
+    {
+        header = Lang:t("menu.purchase_header"),
+        isMenuHeader = true
+    },
+    {
+      header = Lang:t("menu.k9_takeout"),
+      txt = Lang:t("menu.takeout_txt"),
+      params = {
+        event = 'qb-k9:client:PurchaseDog',
+      }
+    },
+    {
+      header = Lang:t("menu.k9_return"),
+      txt = Lang:t("menu.return_txt"),
+      params = {
+        event = 'qb-k9:client:ReturnDoggo',
+      }
+    },
+  }
+
+  exports['qb-menu']:openMenu(K9Purchase)
+end)
+
+RegisterNetEvent('qb-k9:client:ReturnDoggo', function() 
+  if k9_id then
+    DespawnK9()
+    QBCore.Functions.Notify(Lang:t("info.k9_return"), "success", 4500)
+  else
+    QBCore.Functions.Notify(Lang:t("error.k9_returnerror"), "error", 4500)
+  end
+end)
+
+
+RegisterNetEvent('qb-k9:client:PurchaseDog', function()
+  if k9_id then
+    DespawnK9()
+  end
+
+  local K9Dawgs = {}
+  for k,v in pairs(Config.DogModelProps) do
+    K9Dawgs[#K9Dawgs + 1] = {
+        header = Config.DogModelProps[k]["Header"],
+        txt = Config.DogModelProps[k]["Text"],
+        params = {
+            event = 'qb-k9:client:SpawnHandler',
+            args = {
+                model = Config.DogModelProps[k]["Dog"],
+                colour = Config.DogModelProps[k]["Colour"],
+                vest = Config.DogModelProps[k]["Vest"],
+            }
+        }
+    }
 end
+exports['qb-menu']:openMenu(K9Dawgs)
+end)
 
---prevent world spawn of ped model
-AddEventHandler('populationPedCreating', function(x, y, z, model, setters)
-    if model == 'a_c_shepherd' and K9_CONFIG.Prevent then
-      CancelEvent()
+RegisterNetEvent('qb-k9:client:SpawnHandler', function(data) 
+  TriggerServerEvent("K9:SERVER:SPAWN_K9", data.model, data.colour, data.vest)
+end)
+
+--- SPAWN EVENT
+RegisterNetEvent('K9:CLIENT:SPAWN_K9', function(DawgHash, colour, vest)
+  local pos = GetEntityCoords(PlayerPedId())
+  local heading = GetEntityHeading(PlayerPedId())
+  RequestModel(DawgHash);
+
+  while not HasModelLoaded(DawgHash) do
+    Wait(1)
+    RequestModel(DawgHash);
+  end
+
+  local DOG = CreatePed(28, DawgHash, pos.x, pos.y, pos.z, heading, true, true)
+
+  --SET NET ID FOR DOG
+  k9_id = NetworkGetNetworkIdFromEntity(DOG)
+  --REQEUST CONTROL
+  RequestNetworkControl()
+  --GET ENTITY
+  local DOG = NetworkGetEntityFromNetworkId(k9_id)
+  --set K9 Properties
+  SetPedComponentVariation(DOG, 0, 0, colour, 0)
+  SetPedComponentVariation(DOG, vest, 0, 1, 0)
+  SetBlockingOfNonTemporaryEvents(DOG, true)
+  SetPedFleeAttributes(DOG, 0, false)
+  SetPedRelationshipGroupHash(DOG, GetHashKey("PLAYER_POLICE"))
+  SetPedArmour(DOG, 25)
+  SetEntityHeading(DOG, 90)
+
+  ---- ** BLIPS ** ----
+  local BLIP = AddBlipForEntity(DOG)
+  SetBlipAsFriendly(BLIP, true)
+  SetBlipSprite(BLIP, 442)
+  BeginTextCommandSetBlipName("STRING")
+  AddTextComponentString(k9_name)
+  EndTextCommandSetBlipName(BLIP)
+  K9AttackorFollow(false)
+
+  ---- ** Enable K9 ** ----
+  EnableK9(true)
+end)
+
+
+RegisterNetEvent('k9:client:search_results', function(status, type)
+  if status then
+    K9Found(status, type)
+  end
+end)
+
+
+---- ** Register Commands ** ----
+
+RegisterKeyMapping('caninecommanders', 'K9 COMMANDS POLICE ONLY', 'keyboard', 'K')
+
+RegisterCommand("caninecommanders", function()
+  if activate_k9 then
+    local k9Commands = {
+      {
+          header = Lang:t("menu.k9_commands"),
+          isMenuHeader = true
+      },
+      {
+        header = Lang:t("menu.k9_sit"),
+        txt = Lang:t("menu.k9_sittxt"),
+        params = {
+          event = 'qb-k9:client:Commands',
+          args = "sit"
+        }
+      },
+      {
+        header = Lang:t("menu.k9_lay"),
+        txt = Lang:t("menu.k9_laytxt"),
+        params = {
+          event = 'qb-k9:client:Commands',
+          args = "laydown"
+        }
+      },
+      {
+        header = Lang:t("menu.k9_carsearch"),
+        txt = Lang:t("menu.k9_carsearchtxt"),
+        params = {
+          event = 'qb-k9:client:Commands',
+          args = "searchcar"
+        }
+      },
+      {
+        header = Lang:t("menu.k9_enterveh"),
+        txt = Lang:t("menu.k9_entervehtxt"),
+        params = {
+          event = 'qb-k9:client:Commands',
+          args = "entercar"
+        }
+      },
+      {
+        header = Lang:t("menu.k9_searchp"),
+        txt = Lang:t("menu.k9_searchptxt"),
+        params = {
+          event = 'qb-k9:client:Commands',
+          args = "searchdude"
+        }
+      },
+      {
+        header = Lang:t("menu.k9_area"),
+        txt = Lang:t("menu.k9_areatxt"),
+        params = {
+          event = 'qb-k9:client:Commands',
+          args = "searcharea"
+        }
+      },
+    }
+    exports['qb-menu']:openMenu(k9Commands)
+  end
+end, false) 
+
+RegisterKeyMapping('cannineattackfollow', 'K9 COMMANDS POLICE ONLY', 'keyboard', 'Z')
+
+RegisterCommand("cannineattackfollow", function()
+  if activate_k9 then
+    local ped = PlayerPedId()
+    if IsPlayerFreeAiming(PlayerId()) then
+      local bool, target = GetEntityPlayerIsFreeAimingAt(PlayerId())
+      if bool then
+          if IsEntityAPed(target) then
+              following = false
+              local DOG = NetworkGetEntityFromNetworkId(k9_id)
+
+              if IsEntityAttached(DOG) then
+                K9ToggleVehicle(target)
+              else 
+                K9AttackorFollow(target)
+              end
+          end
+      end
+    else
+      if not following then
+        K9AttackorFollow(false)
+        following = true
+      end
     end
+  end
+end, false) 
+
+RegisterNetEvent('qb-k9:client:Commands', function(data)
+  if data == "sit" then
+    PlayAnimation(sit.dict, sit.anim)
+  elseif data == "laydown" then 
+    PlayAnimation(laydown.dict, laydown.anim)
+  elseif data == "searchcar" then 
+    K9SearchVehicle()
+  elseif data == "entercar" then 
+    K9ToggleVehicle(false)
+  elseif data == "searchdude" then 
+    K9SearchPerson()
+  elseif data == "searcharea" then 
+    K9SearchArea()
+  end
 end)
