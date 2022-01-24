@@ -3,7 +3,7 @@ local QBCore = exports['qb-core']:GetCoreObject()
 RegisterServerEvent("K9:SERVER:SPAWN_K9", function(model, colour, vest)
     local PLAYER = QBCore.Functions.GetPlayer(source).PlayerData
 
-    if PLAYER.job ~= nil and PLAYER.job.name == "police" and PLAYER.job.grade.level >= 2 then
+    if PLAYER.job ~= nil and PLAYER.job.name == "police"  then
 
       TriggerClientEvent("K9:CLIENT:SPAWN_K9", source, model, colour, vest)
 
