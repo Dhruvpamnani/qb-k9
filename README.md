@@ -15,32 +15,20 @@ The k9 ped I use personally from this script is from here https://forum.cfx.re/t
 
 # You must add this to QB Inventory Server main.lua. 
 ```
-    local function HasItem(list, item)
-
-        for i = 1, #list do
-
-            if item == list[i] then
-                return true
-            end
-        end
-
-        return false
-    end
-
     AddEventHandler("inventory:server:SearchLocalVehicleInventory", function(plate, list, cb)
-    local trunk = Trunks[plate]
-    local glovebox = Gloveboxes[plate]
-    local result = false
+    local TRUNK = Trunks[plate]
+    local GLOVEBOX = Gloveboxes[plate]
+    local RESULT = false
 
-    if trunk ~= nil then
-        for k, v in pairs(trunk.items) do
-            local ITEM = trunk.items[k].name
+    if TRUNK ~= nil then
+        for k, v in pairs(TRUNK.items) do
+            local ITEM = TRUNK.items[k].name
             if HasItem(list, ITEM) then
                 RESULT = true
             end
         end
     else
-        trunk = GetOwnedVehicleItems(plate)
+        TRUNK = GetOwnedVehicleItems(plate)
 
         for k, v in pairs(TRUNK) do
 
@@ -52,25 +40,38 @@ The k9 ped I use personally from this script is from here https://forum.cfx.re/t
 
     end
 
-    if glovebox ~= nil then
-        for k, v in pairs(glovebox.items) do
+    if GLOVEBOX ~= nil then
+        for k, v in pairs(GLOVEBOX.items) do
 
-            local ITEM = glovebox.items[k].name
+            local ITEM = GLOVEBOX.items[k].name
             if HasItem(list, ITEM) then
                 RESULT = true
             end
         end
     else
-        glovebox = GetOwnedVehicleGloveboxItems(plate)
+        GLOVEBOX = GetOwnedVehicleGloveboxItems(plate)
 
-        for k, v in pairs(glovebox) do
-            local ITEM = glovebox[k].name
+        for k, v in pairs(GLOVEBOX) do
+            local ITEM = GLOVEBOX[k].name
             if HasItem(list, ITEM) then
                 RESULT = true
             end
         end
     end
     cb(RESULT)
-end)
+    end)
+   
+
+    function HasItem(list, item)
+
+        for i = 1, #list do
+
+            if item == list[i] then
+                return true
+            end
+        end
+
+        return false
+    end
 
 ```
